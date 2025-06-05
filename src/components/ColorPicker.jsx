@@ -316,17 +316,9 @@ const ColorPicker = () => {
 
   return (
     <div className="flex justify-center items-start w-full min-h-screen">
-      {/* Left Banner  */}
-      {/* <div className="hidden lg:flex justify-end items-center flex-grow min-w-0 pr-4">
-        <img
-          src={banner}
-          alt="Left Banner"
-          className="h-[550px] w-[100px] object-contain"
-        />
-      </div> */}
-
+      
       {/* Main Content Container */}
-      <div className="md:w-[49%] w-80 mx-auto flex-shrink-0">
+      <div className="md:w-[49%] w-80 mx-auto flex-shrink-0 mt-10">
         <h1 className="pt-6 text-center md:text-left text-2xl md:text-[34px] font-bold">
           Upload Svg & Change Colors
         </h1>
