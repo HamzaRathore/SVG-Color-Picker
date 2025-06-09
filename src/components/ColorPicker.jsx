@@ -437,7 +437,7 @@ const ColorPicker = () => {
   }, [svgContent]);
 
   return (
-    <div className="flex justify-center items-start w-full min-h-screen bg-gray-50">
+   <div className="flex justify-center items-start w-full min-h-screen animated-gradient-bg md: pt-10">
       {/* Main Content Container */}
       <div className="w-full max-w-4xl mx-auto px-4 py-8">
         <div className="bg-white rounded-xl shadow-md overflow-hidden">
@@ -488,7 +488,7 @@ const ColorPicker = () => {
               {/* Upload & Display Area - Same size as original */}
               <div className="flex-1">
                 <div className="relative bg-gray-100 rounded-lg overflow-hidden "
-                  style={{ height: "400px" }}>
+                  style={{ height: "385px" }}>
                   <UploadArea
                     isDragging={isDragging}
                     onDragEnter={handleDragEnter}

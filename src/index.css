@@ -4,3 +4,31 @@ body {
   padding: 0;
   overflow-x: hidden;
 }
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; /* Prevent horizontal scroll for large gradients */
+  background-color: #eef2f7; /* Light grayish-blue base */
+  background-image:
+    /* Subtle diagonal lines or dots */
+    linear-gradient(45deg, rgba(255,255,255,0.1) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.1) 75%, rgba(255,255,255,0.1) 100%),
+    linear-gradient(-45deg, rgba(255,255,255,0.1) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.1) 75%, rgba(255,255,255,0.1) 100%);
+  background-size: 40px 40px; /* Adjust spacing of the grid */
+  background-attachment: fixed;
+  position: relative; /* For the pseudo-element overlay */
+}
+
+/* Optional: A subtle radial gradient overlay for depth */
+body::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at top left, rgba(255,165,0,0.05) 0%, transparent 30%),
+              radial-gradient(circle at bottom right, rgba(0,191,255,0.05) 0%, transparent 30%);
+  pointer-events: none; /* Allows clicks to pass through */
+  z-index: -1; /* Keep it behind main content */
+}
