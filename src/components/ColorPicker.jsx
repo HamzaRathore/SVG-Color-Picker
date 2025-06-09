@@ -9,12 +9,11 @@ import DownloadButtons from "./DownloadButtons";
 import { ImBin } from "react-icons/im";
 import { FaUndo } from "react-icons/fa";
 import { LuRefreshCw } from "react-icons/lu";
+import { FiInfo } from "react-icons/fi";
+import { MdOutlineZoomIn, MdOutlineZoomOut } from "react-icons/md";
 
 import useMobileDetection from "../hooks/useMobileDetection";
 import useFileUpload from "../hooks/useFileUpload";
-
-import banner from "../assets/banner/Ads.png";
-import banner2 from "../assets/banner/Ads 3.png";
 
 const DEFAULT_COLOR = "#F87316";
 
@@ -24,11 +23,17 @@ const ColorPicker = () => {
   const [selectedElement, setSelectedElement] = useState(null);
   const [currentColor, setCurrentColor] = useState(DEFAULT_COLOR);
   const [undoStack, setUndoStack] = useState([]);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [showHelp, setShowHelp] = useState(false);
+  const [recentColors, setRecentColors] = useState([]);
+  const [isPanning, setIsPanning] = useState(false);
+  const [startPanPoint, setStartPanPoint] = useState({ x: 0, y: 0 });
+  const [transform, setTransform] = useState({ x: 0, y: 0 });
 
   // Refs
-  const originalSvgRef = useRef(""); // Original SVG snapshot for reset
-  const svgContainerRef = useRef(null); // Container for SVG element
-  const svgJsDraw = useRef(null); // svg.js instance
+  const originalSvgRef = useRef("");
+  const svgContainerRef = useRef(null);
+  const svgJsDraw = useRef(null);
   const hiddenColorInputRef = useRef(null);
 
   // Custom hooks
@@ -40,6 +45,8 @@ const ColorPicker = () => {
     setUndoStack([]);
     setSelectedElement(null);
     setCurrentColor(DEFAULT_COLOR);
+    setZoomLevel(1);
+    setTransform({ x: 0, y: 0 });
   }, []);
 
   // File upload hook with reset callback
@@ -53,6 +60,58 @@ const ColorPicker = () => {
     handleDrop,
     triggerFileInput,
   } = useFileUpload(setSvgContent, resetOnUpload);
+
+  // Add color to recent colors
+  const addRecentColor = useCallback((color) => {
+    setRecentColors(prev => {
+      const newColors = [color, ...prev.filter(c => c !== color)].slice(0, 8);
+      return newColors;
+    });
+  }, []);
+
+  // Handle panning start
+  const handlePanStart = useCallback((e) => {
+    if (!svgContainerRef.current || !isPanning) return;
+    
+    const rect = svgContainerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    setStartPanPoint({ x, y });
+  }, [isPanning]);
+
+  // Handle panning move
+  const handlePanMove = useCallback((e) => {
+    if (!svgContainerRef.current || !isPanning || !startPanPoint.x) return;
+    
+    const rect = svgContainerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    const dx = x - startPanPoint.x;
+    const dy = y - startPanPoint.y;
+    
+    setTransform(prev => ({
+      x: prev.x + dx,
+      y: prev.y + dy
+    }));
+    
+    setStartPanPoint({ x, y });
+  }, [isPanning, startPanPoint]);
+
+  // Handle panning end
+  const handlePanEnd = useCallback(() => {
+    setIsPanning(false);
+  }, []);
+
+  // Zoom in/out
+  const handleZoom = useCallback((direction) => {
+    setZoomLevel(prev => {
+      const newZoom = direction === 'in' ? 
+        Math.min(prev * 1.2, 5) : 
+        Math.max(prev * 0.8, 0.5);
+      return newZoom;
+    });
+  }, []);
 
   // Load and prepare SVG inside container
   const loadSVG = useCallback(
@@ -78,7 +137,7 @@ const ColorPicker = () => {
         svgElement.setAttribute("viewBox", `0 0 ${bbox.width} ${bbox.height}`);
       }
 
-      // Set styling for SVG container
+      // Set styling for SVG container (keeping original size)
       Object.assign(svgElement.style, {
         width: "100%",
         height: "100%",
@@ -133,6 +192,27 @@ const ColorPicker = () => {
       svgJsDraw.current?.clear()?.remove();
       svgJsDraw.current = SVG(svgElement);
 
+      // Add hover effect to show which element will be selected
+      svgJsDraw.current.find(validTags.join(", ")).each(function () {
+        const el = this;
+        if (!el.attr("id")) return;
+
+        el.off("mouseenter");
+        el.off("mouseleave");
+
+        el.on("mouseenter", () => {
+          if (!isPanning) {
+            el.node.style.outline = "2px dashed rgba(255,255,255,0.8)";
+            el.node.style.outlineOffset = "2px";
+          }
+        });
+
+        el.on("mouseleave", () => {
+          el.node.style.outline = "";
+          el.node.style.outlineOffset = "";
+        });
+      });
+
       // Add click handlers on SVG elements for color picking
       svgJsDraw.current.find(validTags.join(", ")).each(function () {
         const el = this;
@@ -141,6 +221,8 @@ const ColorPicker = () => {
         el.off("click"); // remove any previous listeners
 
         el.on("click", (e) => {
+          if (isPanning) return;
+          
           // Handle click on SVG element
           e.stopPropagation();
 
@@ -160,6 +242,7 @@ const ColorPicker = () => {
 
           const initialColor = styles[colorType] || DEFAULT_COLOR;
           setCurrentColor(initialColor);
+          addRecentColor(initialColor);
           setSelectedElement({ id: el.attr("id"), type: colorType });
 
           // Trigger hidden color input for color picker UI
@@ -175,7 +258,7 @@ const ColorPicker = () => {
         if (e.target === svgJsDraw.current.node) setSelectedElement(null);
       });
     },
-    [selectedElement]
+    [selectedElement, isPanning, addRecentColor]
   );
 
   // Load SVG when svgContent changes
@@ -189,11 +272,23 @@ const ColorPicker = () => {
     }
   }, [svgContent, loadSVG]);
 
+  // Apply zoom and transform
+  useEffect(() => {
+    if (svgContainerRef.current && svgContent) {
+      const svgElement = svgContainerRef.current.querySelector("svg");
+      if (svgElement) {
+        svgElement.style.transform = `translate(${transform.x}px, ${transform.y}px) scale(${zoomLevel})`;
+        svgElement.style.transformOrigin = "center";
+      }
+    }
+  }, [zoomLevel, transform, svgContent]);
+
   // Change selected element's fill/stroke color
   const handleColorChange = useCallback(
     (e) => {
       const newColor = e.target.value;
       setCurrentColor(newColor);
+      addRecentColor(newColor);
 
       if (!selectedElement || !svgJsDraw.current) return;
 
@@ -215,8 +310,32 @@ const ColorPicker = () => {
       );
       setSvgContent(updatedSvg);
     },
-    [selectedElement]
+    [selectedElement, addRecentColor]
   );
+
+  // Apply color from recent colors
+  const applyRecentColor = useCallback((color) => {
+    setCurrentColor(color);
+    if (!selectedElement || !svgJsDraw.current) return;
+
+    const element = svgJsDraw.current.findOne(`#${selectedElement.id}`);
+    if (!element) return;
+
+    // Save current SVG to undo stack
+    if (svgContainerRef.current) {
+      const currentSvg =
+        svgContainerRef.current.querySelector("svg")?.outerHTML;
+      if (currentSvg) setUndoStack((prev) => [...prev, currentSvg]);
+    }
+
+    element[selectedElement.type](color);
+    element.node.style[selectedElement.type] = color;
+
+    const updatedSvg = new XMLSerializer().serializeToString(
+      svgJsDraw.current.node
+    );
+    setSvgContent(updatedSvg);
+  }, [selectedElement]);
 
   // Download SVG file
   const handleDownloadSVG = useCallback(() => {
@@ -291,6 +410,8 @@ const ColorPicker = () => {
     setSvgContent("");
     setSelectedElement(null);
     setCurrentColor(DEFAULT_COLOR);
+    setZoomLevel(1);
+    setTransform({ x: 0, y: 0 });
   }, [svgContent]);
 
   // Undo last change
@@ -305,73 +426,176 @@ const ColorPicker = () => {
 
   // Reset SVG to original upload
   const handleReset = useCallback(() => {
-    console.log("Reset triggered", { originalSvg: originalSvgRef.current });
     if (!originalSvgRef.current) return;
 
     setUndoStack((prev) => [...prev, svgContent]);
     setSvgContent(originalSvgRef.current);
     setSelectedElement(null);
     setCurrentColor(DEFAULT_COLOR);
+    setZoomLevel(1);
+    setTransform({ x: 0, y: 0 });
   }, [svgContent]);
 
   return (
-    <div className="flex justify-center items-start w-full min-h-screen">
-      
+    <div className="flex justify-center items-start w-full min-h-screen bg-gray-50">
       {/* Main Content Container */}
-      <div className="md:w-[49%] w-80 mx-auto flex-shrink-0 mt-10">
-        <h1 className="pt-6 text-center md:text-left text-2xl md:text-[34px] font-bold">
-          Upload Svg & Change Colors
-        </h1>
-
-        <div className="flex flex-col md:flex-row mt-4 gap-4">
-          {/* Upload & Display Area */}
-          <UploadArea
-            isDragging={isDragging}
-            onDragEnter={handleDragEnter}
-            onDragLeave={handleDragLeave}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            onClick={triggerFileInput}
-            hasContent={!!svgContent}
-          >
-            <div
-              ref={svgContainerRef}
-              className="h-full w-full overflow-hidden"
-            />
-          </UploadArea>
-
-          {/* Controls for mobile */}
-          {isMobile ? (
-            <div className="flex justify-center gap-4 mt-4">
-              <button
-                onClick={handleReset}
-                className="flex items-center gap-1 text-xs font-semibold text-[#283038] underline"
+      <div className="w-full max-w-4xl mx-auto px-4 py-8">
+        <div className="bg-white rounded-xl shadow-md overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-orange-500 to-amber-500 p-6">
+            <div className="flex justify-between items-center">
+              <h1 className="text-2xl md:text-3xl font-bold text-white">
+                SVG Color Editor
+              </h1>
+              <button 
+                onClick={() => setShowHelp(!showHelp)}
+                className="p-2 text-white hover:text-gray-200 transition-colors"
+                aria-label="Help"
               >
-                <LuRefreshCw className="w-4 h-4" /> Reset
-              </button>
-              <button
-                onClick={handleClear}
-                className="flex items-center gap-1 text-xs font-semibold text-red-600 underline "
-              >
-                <ImBin className="w-3.5 h-3.5" /> Clear
-              </button>
-              <button
-                onClick={handleUndo}
-                className="flex items-center gap-1 text-xs font-semibold text-[#283038] underline"
-              >
-                <FaUndo className="w-4 h-4" /> Undo
+                <FiInfo size={24} />
               </button>
             </div>
-          ) : (
-            <ColorControls
-              selectedElement={selectedElement}
-              currentColor={currentColor}
-              onColorChange={handleColorChange}
-              onReset={handleReset}
-              onClear={handleClear}
-              onUndo={handleUndo}
-            />
+            <p className="text-white/90 mt-2">
+              Upload an SVG and customize its colors
+            </p>
+          </div>
+
+          {/* Help Panel */}
+          {showHelp && (
+            <div className="bg-blue-50 p-4 border-b border-blue-100">
+              <h3 className="font-bold text-blue-800 mb-2">How to use:</h3>
+              <ul className="list-disc pl-5 space-y-1 text-blue-700">
+                <li>Drag & drop an SVG file or click to upload</li>
+                <li>Click on any element to select it</li>
+                <li>Change the color using the color picker</li>
+                <li>Use the zoom and pan tools to navigate large SVGs</li>
+                <li>Download your customized SVG/PNG/JPEG</li>
+              </ul>
+              <div className="mt-3 flex justify-end">
+                <button 
+                  onClick={() => setShowHelp(false)}
+                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                >
+                  Got it!
+                </button>
+              </div>
+            </div>
           )}
+
+          {/* Main Content */}
+          <div className="p-6">
+            <div className="flex flex-col lg:flex-row gap-6">
+              {/* Upload & Display Area - Same size as original */}
+              <div className="flex-1">
+                <div className="relative bg-gray-100 rounded-lg overflow-hidden "
+                  style={{ height: "400px" }}>
+                  <UploadArea
+                    isDragging={isDragging}
+                    onDragEnter={handleDragEnter}
+                    onDragLeave={handleDragLeave}
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
+                    onClick={triggerFileInput}
+                    hasContent={!!svgContent}
+                  >
+                    <div
+                      ref={svgContainerRef}
+                      className="h-full w-full overflow-hidden"
+                      onMouseDown={handlePanStart}
+                      onMouseMove={handlePanMove}
+                      onMouseUp={handlePanEnd}
+                      onMouseLeave={handlePanEnd}
+                      style={{ cursor: isPanning ? 'grabbing' : 'auto' }}
+                    />
+                  </UploadArea>
+
+                  {svgContent && (
+                    <div className="absolute bottom-4 right-4 flex flex-col space-y-2">
+                      <button
+                        onClick={() => handleZoom('in')}
+                        className="p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-colors"
+                        aria-label="Zoom in"
+                      >
+                        <MdOutlineZoomIn size={20} />
+                      </button>
+                      <button
+                        onClick={() => handleZoom('out')}
+                        className="p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-colors"
+                        aria-label="Zoom out"
+                      >
+                        <MdOutlineZoomOut size={20} />
+                      </button>
+                      <button
+                        onMouseDown={() => setIsPanning(true)}
+                        onMouseUp={() => setIsPanning(false)}
+                        className={`p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-colors ${isPanning ? 'bg-gray-200' : ''}`}
+                        aria-label="Pan tool"
+                      >
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path d="M14 5l7 7m0 0l-7 7m7-7H3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setZoomLevel(1);
+                          setTransform({ x: 0, y: 0 });
+                        }}
+                        className="p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-colors text-xs font-medium"
+                        aria-label="Reset view"
+                      >
+                        1:1
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mobile Controls */}
+                {isMobile && (
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    <button
+                      onClick={handleReset}
+                      className="flex items-center justify-center gap-1 py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded-md text-sm font-medium transition-colors"
+                    >
+                      <LuRefreshCw className="w-4 h-4" /> Reset
+                    </button>
+                    <button
+                      onClick={handleClear}
+                      className="flex items-center justify-center gap-1 py-2 px-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-md text-sm font-medium transition-colors"
+                    >
+                      <ImBin className="w-3.5 h-3.5" /> Clear
+                    </button>
+                    <button
+                      onClick={handleUndo}
+                      className="flex items-center justify-center gap-1 py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded-md text-sm font-medium transition-colors"
+                    >
+                      <FaUndo className="w-4 h-4" /> Undo
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Controls Panel */}
+              <div className="lg:w-96 flex-shrink-0 ">
+                <ColorControls
+                  selectedElement={selectedElement}
+                  currentColor={currentColor}
+                  recentColors={recentColors}
+                  onColorChange={handleColorChange}
+                  onApplyRecentColor={applyRecentColor}
+                  onReset={handleReset}
+                  onClear={handleClear}
+                  onUndo={handleUndo}
+                />
+
+                <DownloadButtons
+                  onDownloadSVG={handleDownloadSVG}
+                  onDownloadPNG={() => downloadImage("png")}
+                  onDownloadJPEG={() => downloadImage("jpeg")}
+                  disabled={!svgContent}
+                />
+              </div>
+            </div>
+          </div>
         </div>
 
         <input
@@ -389,28 +613,7 @@ const ColorPicker = () => {
           onChange={handleFileChange}
           className="hidden"
         />
-
-      {/* Horizontal Banner  */}
-        {/* <div className="mt-6 md:mt-2 flex items-center justify-center ">
-          <img src={banner2} alt="" className="w-[72%] "  />
-        </div> */}
-
-        {/* Download buttons */}
-        <DownloadButtons
-          onDownloadSVG={handleDownloadSVG}
-          onDownloadPNG={() => downloadImage("png")}
-          onDownloadJPEG={() => downloadImage("jpeg")}
-        />
       </div>
-
-      {/* Right Banner */}
-      {/* <div className="hidden lg:flex justify-start items-center flex-grow min-w-0 pl-4">
-        <img
-          src={banner}
-          alt="Right Banner"
-          className="h-[550px] w-[100px] object-contain"
-        />
-      </div> */}
     </div>
   );
 };
